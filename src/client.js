@@ -284,9 +284,6 @@ export default class PubSubApiClient {
             if (!this.#client) {
                 throw new Error('Pub/Sub API client is not connected.');
             }
-            const schema = await this.#getEventSchema(
-                subscribeRequest.topicName
-            );
 
             const subscription = this.#client.Subscribe();
             subscription.write(subscribeRequest);
@@ -305,9 +302,13 @@ export default class PubSubApiClient {
                     this.#logger.info(
                         `Received ${data.events.length} events, latest replay ID: ${latestReplayId}`
                     );
-                    data.events.forEach((event) => {
+                    data.events.forEach(async (event) => {
+                        const eventSchema = await this.#getEventSchema(
+                            subscribeRequest.topicName
+                        );
+
                         try {
-                            const parsedEvent = parseEvent(schema, event);
+                            const parsedEvent = parseEvent(eventSchema, event);
                             this.#logger.debug(parsedEvent);
                             eventEmitter.emit('data', parsedEvent);
                         } catch (error) {
