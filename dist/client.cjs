@@ -480,13 +480,13 @@ function base64url(input) {
 var CUSTOM_LONG_AVRO_TYPE = import_avro_js2.default.types.LongType.using({
   fromBuffer: (buf) => {
     const big = buf.readBigInt64LE();
-    if (big > Number.MAX_SAFE_INTEGER) {
+    if (big < Number.MIN_SAFE_INTEGER || big > Number.MAX_SAFE_INTEGER) {
       return big;
     }
     return Number(BigInt.asIntN(64, big));
   },
   toBuffer: (n) => {
-    const buf = Buffer.alloc(8);
+    const buf = Buffer.allocUnsafe(8);
     if (n instanceof BigInt) {
       buf.writeBigInt64LE(n);
     } else {
@@ -498,7 +498,7 @@ var CUSTOM_LONG_AVRO_TYPE = import_avro_js2.default.types.LongType.using({
   toJSON: Number,
   isValid: (n) => {
     const type = typeof n;
-    return type === "bigint" || type === "number";
+    return type === "number" && n % 1 === 0 || type === "bigint";
   },
   compare: (n1, n2) => {
     return n1 === n2 ? 0 : n1 < n2 ? -1 : 1;
@@ -515,6 +515,11 @@ var PubSubApiClient = class {
    * @type {Map<string,Schema>}
    */
   #schemaChache;
+  /**
+   * Map of topics indexed by schema id
+   * @type {Map<string,Schema>}
+   */
+  #topicCache;
   #logger;
   /**
    * Builds a new Pub/Sub API client
@@ -686,9 +691,6 @@ var PubSubApiClient = class {
       if (!this.#client) {
         throw new Error("Pub/Sub API client is not connected.");
       }
-      const schema = await this.#getEventSchema(
-        subscribeRequest.topicName
-      );
       const subscription = this.#client.Subscribe();
       subscription.write(subscribeRequest);
       this.#logger.info(
@@ -704,7 +706,10 @@ var PubSubApiClient = class {
           this.#logger.info(
             `Received ${data.events.length} events, latest replay ID: ${latestReplayId}`
           );
-          data.events.forEach((event) => {
+          data.events.forEach(async (event) => {
+            const schema = await this.#getEventSchemaById(
+              event.schemaId
+            );
             try {
               const parsedEvent = parseEvent(schema, event);
               this.#logger.debug(parsedEvent);
@@ -838,6 +843,23 @@ var PubSubApiClient = class {
     return schema;
   }
   /**
+   * Retrieves the event schema for a schemaId from the cache.
+   * If it's not cached, fetches the shema with the gRPC client.
+   * @param {string} schemaId name of the topic that we're fetching
+   * @returns {Promise<Schema>} Promise holding parsed event schema
+   */
+  async #getEventSchemaById(schemaId) {
+    const topicName = this.#topicCache.get(schemaId);
+    if (topicName) {
+      return this.#getEventSchema(topicName);
+    } else {
+      const schema = this.#fetchEventSchemaWithClientById(schemaId);
+      this.#schemaChache.set(schema.topicName, schema);
+      this.#topicCache.set(schemaId, schema.topicName);
+      return schema;
+    }
+  }
+  /**
    * Requests the event schema for a topic using the gRPC client
    * @param {string} topicName name of the topic that we're fetching
    * @returns {Promise<Schema>} Promise holding parsed event schema
@@ -864,6 +886,31 @@ var PubSubApiClient = class {
                 type: schemaType
               });
             }
+          });
+        }
+      });
+    });
+  }
+  /**
+   * Requests the event schema for a schemaId using the gRPC client
+   * @param {string} schemaId id of the schema that we're fetching
+   * @returns {Promise<Schema>} Promise holding parsed event schema
+   */
+  async #fetchEventSchemaWithClientById(schemaId) {
+    return new Promise((resolve, reject) => {
+      this.#client.GetSchema({ schemaId }, (schemaError, res) => {
+        if (schemaError) {
+          reject(schemaError);
+        } else {
+          const schemaType = import_avro_js2.default.parse(res.schemaJson, {
+            registry: { long: CUSTOM_LONG_AVRO_TYPE }
+          });
+          this.#logger.info(
+            `Topic schema type loaded: ${schemaType}`
+          );
+          resolve({
+            id: schemaId,
+            type: schemaType
           });
         }
       });
