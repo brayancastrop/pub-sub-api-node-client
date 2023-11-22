@@ -528,6 +528,7 @@ var PubSubApiClient = class {
   constructor(logger = console) {
     this.#logger = logger;
     this.#schemaChache = /* @__PURE__ */ new Map();
+    this.#topicCache = /* @__PURE__ */ new Map();
     try {
       Configuration.load();
     } catch (error) {

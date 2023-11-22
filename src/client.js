@@ -105,6 +105,7 @@ export default class PubSubApiClient {
     constructor(logger = console) {
         this.#logger = logger;
         this.#schemaChache = new Map();
+        this.#topicCache = new Map();
         // Check and load config
         try {
             Configuration.load();
