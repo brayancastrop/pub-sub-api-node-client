@@ -515,11 +515,6 @@ var PubSubApiClient = class {
    * @type {Map<string,Schema>}
    */
   #schemaChache;
-  /**
-   * Map of topics indexed by schema id
-   * @type {Map<string,Schema>}
-   */
-  #topicCache;
   #logger;
   /**
    * Builds a new Pub/Sub API client
@@ -528,7 +523,6 @@ var PubSubApiClient = class {
   constructor(logger = console) {
     this.#logger = logger;
     this.#schemaChache = /* @__PURE__ */ new Map();
-    this.#topicCache = /* @__PURE__ */ new Map();
     try {
       Configuration.load();
     } catch (error) {
@@ -709,7 +703,7 @@ var PubSubApiClient = class {
           );
           data.events.forEach(async (event) => {
             const schema = await this.#getEventSchemaById(
-              event.schemaId
+              event.event.schemaId
             );
             try {
               const parsedEvent = parseEvent(schema, event);
@@ -846,19 +840,22 @@ var PubSubApiClient = class {
   /**
    * Retrieves the event schema for a schemaId from the cache.
    * If it's not cached, fetches the shema with the gRPC client.
-   * @param {string} schemaId name of the topic that we're fetching
+   * @param {string} schemaId id of the schema that we're fetching
    * @returns {Promise<Schema>} Promise holding parsed event schema
    */
   async #getEventSchemaById(schemaId) {
-    const topicName = this.#topicCache.get(schemaId);
-    if (topicName) {
-      return this.#getEventSchema(topicName);
-    } else {
-      const schema = this.#fetchEventSchemaWithClientById(schemaId);
-      this.#schemaChache.set(schema.topicName, schema);
-      this.#topicCache.set(schemaId, schema.topicName);
-      return schema;
+    let schema = this.#schemaChache.get(schemaId);
+    if (!schema) {
+      try {
+        schema = await this.#fetchEventSchemaWithClientById(schemaId);
+        this.#schemaChache.set(schemaId, schema);
+      } catch (error) {
+        throw new Error(`Failed to load schema for id ${schemaId}`, {
+          cause: error
+        });
+      }
     }
+    return schema;
   }
   /**
    * Requests the event schema for a topic using the gRPC client
