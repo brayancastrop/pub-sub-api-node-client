@@ -699,25 +699,27 @@ var PubSubApiClient = class {
           });
         } else {
           this.#logger.debug(
-            `Received keepalive message. Latest replay ID: ${latestReplayId}`
+            `Received keepalive message for topic ${subscribeRequest.topicName}. Latest replay ID: ${latestReplayId}`
           );
           data.latestReplayId = latestReplayId;
           eventEmitter.emit("keepalive", data);
         }
       });
       subscription.on("end", () => {
-        this.#logger.info("gRPC stream ended");
+        this.#logger.info(
+          `gRPC stream ended for topic ${subscribeRequest.topicName}`
+        );
         eventEmitter.emit("end");
       });
       subscription.on("error", (error) => {
         this.#logger.error(
-          `gRPC stream error: ${JSON.stringify(error)}`
+          `gRPC stream error for topic ${subscribeRequest.topicName}: ${JSON.stringify(error)}`
         );
         eventEmitter.emit("error", error);
       });
       subscription.on("status", (status) => {
         this.#logger.info(
-          `gRPC stream status: ${JSON.stringify(status)}`
+          `gRPC stream status for topic ${subscribeRequest.topicName}: ${JSON.stringify(status)}`
         );
         eventEmitter.emit("status", status);
       });
