@@ -90,6 +90,12 @@ export default class PubSubApiClient {
      */
     #schemaChache;
 
+    /**
+     * Map of topics indexed by schema id
+     * @type {Map<string,Schema>}
+     */
+    #topicCache;
+
     #logger;
 
     /**
@@ -303,12 +309,12 @@ export default class PubSubApiClient {
                         `Received ${data.events.length} events, latest replay ID: ${latestReplayId}`
                     );
                     data.events.forEach(async (event) => {
-                        const eventSchema = await this.#getEventSchema(
-                            subscribeRequest.topicName
+                        const schema = await this.#getEventSchemaById(
+                            event.schemaId
                         );
 
                         try {
-                            const parsedEvent = parseEvent(eventSchema, event);
+                            const parsedEvent = parseEvent(schema, event);
                             this.#logger.debug(parsedEvent);
                             eventEmitter.emit('data', parsedEvent);
                         } catch (error) {
@@ -453,6 +459,24 @@ export default class PubSubApiClient {
     }
 
     /**
+     * Retrieves the event schema for a schemaId from the cache.
+     * If it's not cached, fetches the shema with the gRPC client.
+     * @param {string} schemaId name of the topic that we're fetching
+     * @returns {Promise<Schema>} Promise holding parsed event schema
+     */
+    async #getEventSchemaById(schemaId) {
+        const topicName = this.#topicCache.get(schemaId);
+        if (topicName) {
+            return this.#getEventSchema(topicName);
+        } else {
+            const schema = this.#fetchEventSchemaWithClientById(schemaId);
+            this.#schemaChache.set(schema.topicName, schema);
+            this.#topicCache.set(schemaId, schema.topicName);
+            return schema;
+        }
+    }
+
+    /**
      * Requests the event schema for a topic using the gRPC client
      * @param {string} topicName name of the topic that we're fetching
      * @returns {Promise<Schema>} Promise holding parsed event schema
@@ -480,6 +504,32 @@ export default class PubSubApiClient {
                                 type: schemaType
                             });
                         }
+                    });
+                }
+            });
+        });
+    }
+
+    /**
+     * Requests the event schema for a schemaId using the gRPC client
+     * @param {string} schemaId id of the schema that we're fetching
+     * @returns {Promise<Schema>} Promise holding parsed event schema
+     */
+    async #fetchEventSchemaWithClientById(schemaId) {
+        return new Promise((resolve, reject) => {
+            this.#client.GetSchema({ schemaId }, (schemaError, res) => {
+                if (schemaError) {
+                    reject(schemaError);
+                } else {
+                    const schemaType = avro.parse(res.schemaJson, {
+                        registry: { long: CUSTOM_LONG_AVRO_TYPE }
+                    });
+                    this.#logger.info(
+                        `Topic schema type loaded: ${schemaType}`
+                    );
+                    resolve({
+                        id: schemaId,
+                        type: schemaType
                     });
                 }
             });
