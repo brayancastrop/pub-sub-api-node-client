@@ -702,10 +702,10 @@ var PubSubApiClient = class {
             `Received ${data.events.length} events, latest replay ID: ${latestReplayId}`
           );
           data.events.forEach(async (event) => {
-            const schema = await this.#getEventSchemaById(
-              event.event.schemaId
-            );
             try {
+              const schema = await this.#getEventSchemaById(
+                event.event.schemaId
+              );
               const parsedEvent = parseEvent(schema, event);
               this.#logger.debug(parsedEvent);
               eventEmitter.emit("data", parsedEvent);
@@ -756,6 +756,7 @@ var PubSubApiClient = class {
         );
         eventEmitter.emit("status", status);
       });
+      eventEmitter["subscription"] = subscription;
       return eventEmitter;
     } catch (error) {
       throw new Error(
