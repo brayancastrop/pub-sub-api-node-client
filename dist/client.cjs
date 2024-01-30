@@ -132,6 +132,12 @@ var PubSubEventEmitter = class extends import_events.EventEmitter {
   getTopicName() {
     return this.#topicName;
   }
+  /**
+   * Sets the number of events that were requested during the subscription
+   */
+  setRequestedEventCount(requestedEventCount) {
+    this.#requestedEventCount = requestedEventCount;
+  }
 };
 
 // src/utils/configuration.js
@@ -699,7 +705,8 @@ var PubSubApiClient = class {
         const latestReplayId = decodeReplayId(data.latestReplayId);
         if (data.events) {
           this.#logger.info(
-            `Received ${data.events.length} events, latest replay ID: ${latestReplayId}`
+            `Received ${data.events.length} events, latest replay ID: ${latestReplayId}`,
+            data
           );
           data.events.forEach(async (event) => {
             try {
@@ -713,18 +720,31 @@ var PubSubApiClient = class {
               let replayId;
               try {
                 replayId = decodeReplayId(event.replayId);
-              } catch (error2) {
+              } catch (decodeError) {
+                this.#logger.error(decodeError);
               }
               const message = replayId ? `Failed to parse event with replay ID ${replayId}` : `Failed to parse event with unknown replay ID (latest replay ID was ${latestReplayId})`;
-              const parseError = new EventParseError(
-                message,
-                error,
-                replayId,
-                event,
-                latestReplayId
-              );
-              eventEmitter.emit("error", parseError);
-              this.#logger.error(parseError);
+              try {
+                const parseError = new EventParseError(
+                  message,
+                  error,
+                  replayId,
+                  event,
+                  latestReplayId
+                );
+                eventEmitter.emit("error", parseError);
+                this.#logger.error(parseError);
+              } catch (eventParseError) {
+                eventEmitter.emit("error", eventParseError);
+                this.#logger.error(
+                  eventParseError,
+                  message,
+                  error,
+                  replayId,
+                  event,
+                  latestReplayId
+                );
+              }
             }
             if (eventEmitter.getReceivedEventCount() === eventEmitter.getRequestedEventCount()) {
               eventEmitter.emit("lastevent");
@@ -732,7 +752,8 @@ var PubSubApiClient = class {
           });
         } else {
           this.#logger.debug(
-            `Received keepalive message for topic ${subscribeRequest.topicName}. Latest replay ID: ${latestReplayId}`
+            `Received keepalive message for topic ${subscribeRequest.topicName}. Latest replay ID: ${latestReplayId}`,
+            data
           );
           data.latestReplayId = latestReplayId;
           eventEmitter.emit("keepalive", data);

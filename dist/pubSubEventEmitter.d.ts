@@ -28,6 +28,10 @@ export default class PubSubEventEmitter extends EventEmitter {
      * @returns {string} the topic name
      */
     getTopicName(): string;
+    /**
+     * Sets the number of events that were requested during the subscription
+     */
+    setRequestedEventCount(requestedEventCount: any): void;
     #private;
 }
 import { EventEmitter } from 'events';
