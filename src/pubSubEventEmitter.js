@@ -55,4 +55,11 @@ export default class PubSubEventEmitter extends EventEmitter {
     getTopicName() {
         return this.#topicName;
     }
+
+    /**
+     * Sets the number of events that were requested during the subscription
+     */
+    setRequestedEventCount(requestedEventCount) {
+        this.#requestedEventCount = requestedEventCount;
+    }
 }

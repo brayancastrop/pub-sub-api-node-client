@@ -300,7 +300,8 @@ export default class PubSubApiClient {
                 const latestReplayId = decodeReplayId(data.latestReplayId);
                 if (data.events) {
                     this.#logger.info(
-                        `Received ${data.events.length} events, latest replay ID: ${latestReplayId}`
+                        `Received ${data.events.length} events, latest replay ID: ${latestReplayId}`,
+                        data
                     );
                     data.events.forEach(async (event) => {
                         try {
@@ -316,19 +317,33 @@ export default class PubSubApiClient {
                             try {
                                 replayId = decodeReplayId(event.replayId);
                                 // eslint-disable-next-line no-empty
-                            } catch (error) {}
+                            } catch (decodeError) {
+                                this.#logger.error(decodeError);
+                            }
                             const message = replayId
                                 ? `Failed to parse event with replay ID ${replayId}`
                                 : `Failed to parse event with unknown replay ID (latest replay ID was ${latestReplayId})`;
-                            const parseError = new EventParseError(
-                                message,
-                                error,
-                                replayId,
-                                event,
-                                latestReplayId
-                            );
-                            eventEmitter.emit('error', parseError);
-                            this.#logger.error(parseError);
+                            try {
+                                const parseError = new EventParseError(
+                                    message,
+                                    error,
+                                    replayId,
+                                    event,
+                                    latestReplayId
+                                );
+                                eventEmitter.emit('error', parseError);
+                                this.#logger.error(parseError);
+                            } catch (eventParseError) {
+                                eventEmitter.emit('error', eventParseError);
+                                this.#logger.error(
+                                    eventParseError,
+                                    message,
+                                    error,
+                                    replayId,
+                                    event,
+                                    latestReplayId
+                                );
+                            }
                         }
                         // Emit a 'lastevent' event when reaching the last requested event count
                         if (
@@ -342,7 +357,8 @@ export default class PubSubApiClient {
                     // If there are no events then, every 270 seconds (or less) the server publishes a keepalive message with
                     // the latestReplayId and pendingNumRequested (the number of events that the client is still waiting for)
                     this.#logger.debug(
-                        `Received keepalive message for topic ${subscribeRequest.topicName}. Latest replay ID: ${latestReplayId}`
+                        `Received keepalive message for topic ${subscribeRequest.topicName}. Latest replay ID: ${latestReplayId}`,
+                        data
                     );
                     data.latestReplayId = latestReplayId; // Replace original value with decoded value
                     eventEmitter.emit('keepalive', data);
